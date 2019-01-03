@@ -9,8 +9,9 @@ pip = "==18.0"
 pytesseract = "*"
 pillow = "*"
 requests = "*"
+pyppeteer = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.6"
+python_version = "3.7"
