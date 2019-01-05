@@ -14,4 +14,4 @@ set -o nounset                         # Treat unset variables as an error
 
 set -e
 
-pipenv run python3 main.py
+pipenv run python3 main.py 'The ABC Murders s01e 1080p ntb'

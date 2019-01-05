@@ -83,13 +83,23 @@ async def is_at_wrong_captcha_page(page):
 
 
 async def handle_top_level_div(page: Page):
-    as_ = await page.JJeval(
-        'a', 'as => as.filter(a=>a.href.startsWith("https://s4yx"))')
-    if len(as_) == 0:
-        return
-    print(f'{len(as_)} top div')
-    await page.mouse.click(x=800, y=600)
-    await page.bringToFront()
+    await has_top_level_div(page)
+    await page.evaluate('''
+    () => {
+        function removeSelf(e) {
+            e.parentNode.removeChild(e);
+        }
+        var as = document.querySelectorAll("a");
+        for(var i = 0; i < as.length; i++)
+        {
+            var a = as[i];
+            if (a.href.startsWith('https://s4yx'))
+            {
+                removeSelf(a.parentNode);
+            }
+        }
+    }
+    ''')
 
 
 async def has_top_level_div(page):
@@ -107,6 +117,22 @@ def enable_tracing_request(page):
 
 
 async def get_torrent_pages(page):
+    #await page.evaluate('''
+    #() => {
+    #    var as = document.querySelectorAll("a");
+    #    for(var i = 0; i < as.length; i++)
+    #    {
+    #        var a = as[i];
+    #        if (a.href.includes('/torrent/') && !a.href.includes('#comments'))
+    #        {
+    #            console.log(a.href);
+    #            //var tr = a.parentNode.parentNode;
+    #            //tr.removeChild(a.parentNode);
+    #        }
+    #    }
+    #}
+    #''')
+    #sys.exit(0)
     trs_selector = 'body > table:nth-child(6) > tbody > tr > td:nth-child(2) > div > table > tbody > tr:nth-child(2) > td > table.lista2t > tbody > tr.lista2'
     trs = await page.JJ(trs_selector)
     urls = []
@@ -158,15 +184,15 @@ async def main():
     url = await get_ws_url()
     browser: Browser = await pyppeteer.connect({
         'browserWSEndpoint': url,
-        'defaultViewport': VIEWPORT
+        'defaultViewport': VIEWPORT,
     })
     print('Connected to browser')
     while True:
         page: Page = await bypass_captcha(browser)
         if page is None:
             continue
+        print('Passed captcha, ready to proceed')
         break
-    print('Passed captcha, ready to proceed')
 
     search_input_selector = '#searchinput'
     search_button_selector = '#searchTorrent > table > tbody > tr:nth-child(1) > td:nth-child(2) > button'
@@ -174,7 +200,7 @@ async def main():
 
     await page.type(
         selector=search_input_selector,
-        text='titans s01E 1080p ntb',
+        text=sys.argv[1],
     )
     await handle_top_level_div(page)
     await asyncio.wait(
@@ -193,7 +219,7 @@ async def bypass_captcha(browser: Browser):
     page: Page = await browser.newPage()
     #ctx = await browser.createIncognitoBrowserContext()
     #page: Page = await ctx.newPage()
-    await page.setViewport({'width': 1920, 'height': 1200})
+    #await page.setViewport({'width': 1920, 'height': 1200})
     await page.goto('http://rarbg.to', options=WAIT_UNTIL_NETWORKIDLE0)
     await handle_top_level_div(page)
 
