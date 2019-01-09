@@ -11,10 +11,12 @@ import logging
 import itertools
 import datetime
 import pyppeteer
+from termcolor import cprint
 from pyppeteer.page import Page
 from pyppeteer.errors import PyppeteerError
 from pyppeteer.browser import Browser
 from pyppeteer.element_handle import ElementHandle
+from pyppeteer.helper import addEventListener
 
 import pytesseract
 from PIL import Image
@@ -84,22 +86,38 @@ async def is_at_wrong_captcha_page(page):
 
 async def handle_top_level_div(page: Page):
     await has_top_level_div(page)
-    await page.evaluate('''
-    () => {
-        function removeSelf(e) {
-            e.parentNode.removeChild(e);
-        }
-        var as = document.querySelectorAll("a");
-        for(var i = 0; i < as.length; i++)
-        {
-            var a = as[i];
-            if (a.href.startsWith('https://s4yx'))
-            {
-                removeSelf(a.parentNode);
-            }
-        }
-    }
-    ''')
+    pass
+    #if not await has_top_level_div(page):
+    #    return page
+    #old_url = page.url
+    #await page.mouse.click(x=400, y=400)
+    #await asyncio.sleep(5)
+    #for onePage in await page.browser.pages():
+    #    if onePage.url == old_url:
+    #        await onePage.bringToFront()
+    #        return onePage
+    #while True:
+    #    await page.evaluate('''
+    #    () => {
+    #        function removeSelf(e) {
+    #            e.parentNode.removeChild(e);
+    #            console.log('after remove' + a.href);
+    #        }
+    #        var as = document.querySelectorAll("a");
+    #        for(var i = 0; i < as.length; i++)
+    #        {
+    #            var a = as[i];
+    #            if (a.href.startsWith('https://s4yx'))
+    #            {
+    #                removeSelf(a.parentNode);
+    #            }
+    #        }
+    #        //var pop = document.getElementById("overlib");
+    #        //removeSelf(pop);
+    #    }
+    #    ''')
+    #    await asyncio.sleep(1)
+    #sys.exit(0)
 
 
 async def has_top_level_div(page):
@@ -177,6 +195,13 @@ async def get_ws_url():
     return info['webSocketDebuggerUrl']
 
 
+async def on_target_created(target):
+    page: Page = await target.page()
+    print(f'new page: {page.url}')
+    if page.url.startswith('https') and 'rarbg' not in page.url:
+        await page.close()
+
+
 async def main():
     #enable_logging()
     print('*' * 80)
@@ -186,6 +211,7 @@ async def main():
         'browserWSEndpoint': url,
         'defaultViewport': VIEWPORT,
     })
+    addEventListener(browser, 'targetcreated', on_target_created)
     print('Connected to browser')
     while True:
         page: Page = await bypass_captcha(browser)
@@ -194,10 +220,13 @@ async def main():
         print('Passed captcha, ready to proceed')
         break
 
+    #html = await page.evaluate('() => document.body.innerHTML')
+    #print(html)
+
     search_input_selector = '#searchinput'
     search_button_selector = '#searchTorrent > table > tbody > tr:nth-child(1) > td:nth-child(2) > button'
     await handle_top_level_div(page)
-
+    cprint(page.url, color='red')
     await page.type(
         selector=search_input_selector,
         text=sys.argv[1],
@@ -207,25 +236,51 @@ async def main():
         [page.click(search_button_selector),
          page.waitForNavigation()])
     urls = await get_torrent_pages(page)
+    pprint(urls)
     for url in urls:
         magnet_link = await get_magnet_link_from_torrent_page(
             page, browser, url)
-        print(magnet_link)
+        cprint(magnet_link, color='blue')
         await handle_top_level_div(page)
     #await browser.close()
+
+
+async def intercept_request(req):
+    blocked_js = ('showads.js', 'expla89.js')
+    if any(req.url.endswith(js) for js in blocked_js):
+        cprint('block request to {}'.format(req.url), color='red')
+        await req.abort()
+    else:
+        await req.continue_()
+
+
+async def on_target_created(target):
+    page: Page = await target.page()
+    if page is None:
+        return
+    print(f'new page: {page.url}')
+    await page.setRequestInterception(True)
+    page.on('request', intercept_request)
+    if page.url.startswith('https://s4yx'):
+        await page.close()
 
 
 async def bypass_captcha(browser: Browser):
     page: Page = await browser.newPage()
     #ctx = await browser.createIncognitoBrowserContext()
     #page: Page = await ctx.newPage()
+    await page.setRequestInterception(True)
+    page.on('request', intercept_request)
     #await page.setViewport({'width': 1920, 'height': 1200})
+    #options = {'waitUntil': ['domcontentloaded', 'load', 'networkidle0']}
     await page.goto('http://rarbg.to', options=WAIT_UNTIL_NETWORKIDLE0)
     await handle_top_level_div(page)
 
     torrents_selector = 'body > table:nth-child(5) > tbody > tr > td > table > tbody > tr > td:nth-child(3) > a'
     print('Do real torrents click')
-    await page.click(selector=torrents_selector)
+    await asyncio.wait(
+        [page.click(selector=torrents_selector),
+         page.waitForNavigation()])
     print('nav by click torrents')
 
     if await is_at_verify_page(page):

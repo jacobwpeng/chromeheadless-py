@@ -10,6 +10,7 @@ pytesseract = "*"
 pillow = "*"
 requests = "*"
 pyppeteer = "*"
+termcolor = "*"
 
 [dev-packages]
 
